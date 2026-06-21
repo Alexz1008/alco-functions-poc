@@ -1,0 +1,29 @@
+{
+  "@odata.context": "https://alexz1008-ais-hrs.search.windows.net/$metadata#indexers/$entity",
+  "@odata.etag": "\"0x8DEBC3B1A13032A\"",
+  "name": "hrs-rag-indexer",
+  "description": null,
+  "dataSourceName": "hrs-rag-datasource",
+  "skillsetName": "hrs-rag-skillset",
+  "targetIndexName": "hrs-rag",
+  "disabled": null,
+  "schedule": null,
+  "parameters": {
+    "batchSize": null,
+    "maxFailedItems": null,
+    "maxFailedItemsPerBatch": null,
+    "configuration": {
+      "parsingMode": "default"
+    }
+  },
+  "fieldMappings": [
+    {
+      "sourceFieldName": "metadata_storage_name",
+      "targetFieldName": "title",
+      "mappingFunction": null
+    }
+  ],
+  "outputFieldMappings": [],
+  "cache": null,
+  "encryptionKey": null
+}
