@@ -4,7 +4,10 @@ using Azure.Search.Documents;
 using Azure.Search.Documents.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Enums;
 using Microsoft.Extensions.Logging;
+using Microsoft.OpenApi.Models;
 using System.Net;
 using System.Text.Json;
 
@@ -13,6 +16,16 @@ namespace Alco.Functions.Functions;
 public sealed class QueryAiSearchSkillFunction(SearchClientFactory searchClientFactory, ILogger<QueryAiSearchSkillFunction> logger)
 {
     [Function("QueryAiSearchSkill")]
+    [OpenApiOperation(
+        operationId: "QueryCaseDocuments",
+        tags: ["Search"],
+        Summary = "Search documents for a case",
+        Description = "Performs a semantic search over indexed document chunks scoped to a specific case ID. Returns the most relevant text chunks along with their source file metadata.",
+        Visibility = OpenApiVisibilityType.Important)]
+    [OpenApiSecurity("function_key", SecuritySchemeType.ApiKey, Name = "code", In = OpenApiSecurityLocationType.Query)]
+    [OpenApiRequestBody("application/json", typeof(QueryAiSearchRequest), Required = true, Description = "The search query and case ID to scope results to.")]
+    [OpenApiResponseWithBody(HttpStatusCode.OK, "application/json", typeof(QueryAiSearchResponse), Description = "Matching document chunks for the case.")]
+    [OpenApiResponseWithBody(HttpStatusCode.BadRequest, "application/json", typeof(object), Description = "query or caseId was missing or invalid.")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData request,
         CancellationToken cancellationToken)
@@ -43,20 +56,22 @@ public sealed class QueryAiSearchSkillFunction(SearchClientFactory searchClientF
                 IncludeTotalCount = true,
                 Size = NormalizeSize(queryRequest.Top)
             };
-
-            if (queryRequest.Select is { Count: > 0 })
-            {
-                foreach (var field in queryRequest.Select.Where(static field => !string.IsNullOrWhiteSpace(field)))
-                {
-                    searchOptions.Select.Add(field);
-                }
-            }
+            searchOptions.Select.Add("chunk");
+            searchOptions.Select.Add("title");
+            searchOptions.Select.Add("caseId");
+            searchOptions.Select.Add("fileName");
 
             var results = await searchClient.SearchAsync<SearchDocument>(queryRequest.Query, searchOptions, cancellationToken).ConfigureAwait(false);
-            var documents = new List<SearchDocument>();
+            var documents = new List<CaseSearchResult>();
             await foreach (var result in results.Value.GetResultsAsync())
             {
-                documents.Add(result.Document);
+                documents.Add(new CaseSearchResult
+                {
+                    Chunk = result.Document.TryGetValue("chunk", out var chunk) ? chunk?.ToString() ?? string.Empty : string.Empty,
+                    Title = result.Document.TryGetValue("title", out var title) ? title?.ToString() ?? string.Empty : string.Empty,
+                    CaseId = result.Document.TryGetValue("caseId", out var caseId) ? caseId?.ToString() ?? string.Empty : string.Empty,
+                    FileName = result.Document.TryGetValue("fileName", out var fileName) ? fileName?.ToString() ?? string.Empty : string.Empty
+                });
             }
 
             return await CreateJsonResponseAsync(
@@ -65,7 +80,6 @@ public sealed class QueryAiSearchSkillFunction(SearchClientFactory searchClientF
                 new QueryAiSearchResponse
                 {
                     CaseId = queryRequest.CaseId,
-                    Filter = searchOptions.Filter,
                     Count = documents.Count,
                     TotalCount = results.Value.TotalCount,
                     Results = documents
